@@ -1,32 +1,57 @@
 import argparse, torch
+from src.dataset import load_lyrics_text
+from src.tokenizer import CharTokenizer
 from src.models.bigram import BigramLM
+
+def pick_device():
+    if torch.cuda.is_available():
+        return "cuda"
+    mps = getattr(torch.backends, "mps", None)
+    if mps and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", default="checkpoints/bigram.pt")
     ap.add_argument("--num_tokens", type=int, default=300)
+    ap.add_argument("--temperature", type=float, default=1.0)
+    ap.add_argument("--data", default="data/lyrics.txt")
     args = ap.parse_args()
 
-    ckpt = torch.load(args.ckpt, map_location="cpu")
-    stoi, itos = ckpt["stoi"], ckpt["itos"]
-    V = len(itos)
+    device = pick_device()
 
-    model = BigramLM(V)
-    model.load_state_dict(ckpt["state"])
+    # Load checkpoint
+    ckpt = torch.load(args.ckpt, map_location=device)
+
+    # Build tokenizer from checkpoint if available; else rebuild from data
+    if isinstance(ckpt, dict) and "stoi" in ckpt and "itos" in ckpt:
+        tok = CharTokenizer("")
+        tok.stoi = ckpt["stoi"]
+        tok.itos = ckpt["itos"]
+        tok.vocab_size = len(tok.stoi)
+    else:
+        text = load_lyrics_text(args.data)
+        tok = CharTokenizer(text)
+
+    # Resolve state dict
+    state = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+
+    # Key rename support: table.weight -> token_embedding_table.weight
+    if any(k.startswith("table.") for k in state.keys()):
+        new_state = {}
+        for k, v in state.items():
+            nk = k.replace("table.", "token_embedding_table.")
+            new_state[nk] = v
+        state = new_state
+
+    model = BigramLM(tok.vocab_size).to(device)
+    model.load_state_dict(state, strict=True)
     model.eval()
 
-    start = stoi.get("\n", 0)
-    idx = torch.tensor([[start]], dtype=torch.long)
-    out = [start]
-
-    for _ in range(args.num_tokens):
-        logits = model(idx)[:, -1, :]
-        probs  = torch.softmax(logits, dim=-1)
-        next_id = torch.multinomial(probs, num_samples=1)
-        out.append(int(next_id.item()))
-        idx = torch.cat([idx, next_id], dim=1)
-
-    print("".join(itos[i] for i in out))
+    context = torch.zeros((1, 1), dtype=torch.long, device=device)
+    ids = model.generate(context, args.num_tokens, temperature=args.temperature)[0].tolist()
+    print(tok.decode(ids))
 
 if __name__ == "__main__":
     main()
