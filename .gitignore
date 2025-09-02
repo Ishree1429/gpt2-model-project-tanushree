@@ -12,3 +12,8 @@ outputs/
 data/*.csv
 
 data/*.csv
+
+# keep corpus out of git
+/data/lyrics.txt
+/data/*.csv
+/data/raw/

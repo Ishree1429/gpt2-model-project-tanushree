@@ -16,6 +16,8 @@ def main():
     ap.add_argument("--ckpt", default="checkpoints/bigram.pt")
     ap.add_argument("--num_tokens", type=int, default=300)
     ap.add_argument("--temperature", type=float, default=1.0)
+    ap.add_argument("--top_k", type=int, default=0)
+    ap.add_argument("--top_p", type=float, default=0.0)
     ap.add_argument("--data", default="data/lyrics.txt")
     args = ap.parse_args()
 
@@ -50,7 +52,7 @@ def main():
     model.eval()
 
     context = torch.zeros((1, 1), dtype=torch.long, device=device)
-    ids = model.generate(context, args.num_tokens, temperature=args.temperature)[0].tolist()
+    ids = model.generate(context, args.num_tokens, temperature=args.temperature, top_k=args.top_k, top_p=args.top_p)[0].tolist()
     print(tok.decode(ids))
 
 if __name__ == "__main__":
