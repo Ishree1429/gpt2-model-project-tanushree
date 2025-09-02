@@ -9,3 +9,5 @@ runs/
 outputs/
 .DS_store
 .vscode/
+data/*.csv
+
