@@ -17,3 +17,8 @@ data/*.csv
 /data/lyrics.txt
 /data/*.csv
 /data/raw/
+
+# keep big files out of git
+/data/lyrics.txt
+/data/*.csv
+/checkpoints/*.pt
