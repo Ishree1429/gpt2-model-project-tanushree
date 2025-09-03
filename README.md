@@ -11,3 +11,10 @@ pip install -r requirements.txt
 - Mini-GPT base: saved after base train
 - Fine-tuned Mini-GPT: see samples/style0.txt vs samples/style1.txt
 
+
+## Results 
+- Fine-tuned mini-GPT on lyrics (style token):
+  - Perplexity: **4.80**
+  - Next-token accuracy: **0.539** (char-level)
+- See `samples/style0.txt` vs `samples/style1.txt` for style control.
+
