@@ -42,3 +42,10 @@ Style 1 — (see `showcase/style1.txt`)
 Perplexity: **4.80**  
 Next-token accuracy: **0.539** (character-level)
 
+
+**Fine-tuned with style token**  
+Prompt: `I miss you`
+
+Style 0 — see `showcase/style0.txt`  
+Style 1 — see `showcase/style1.txt`
+
