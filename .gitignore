@@ -26,3 +26,6 @@ data/*.csv
 # keep big files out of git
 /checkpoints/*.pt
 /data/*.txt
+
+/results/
+/samples/
