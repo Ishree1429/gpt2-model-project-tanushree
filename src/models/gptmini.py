@@ -23,20 +23,20 @@ class CausalSelfAttention(nn.Module):
 
     def forward(self, x):
         B,T,C = x.size()
-        k = self.key(x).view(B,T,self.n_head,self.head_dim).transpose(1,2)   # (B,h,T,hd)
-        q = self.query(x).view(B,T,self.n_head,self.head_dim).transpose(1,2) # (B,h,T,hd)
-        v = self.value(x).view(B,T,self.n_head,self.head_dim).transpose(1,2) # (B,h,T,hd)
-        att = (q @ k.transpose(-2,-1)) / math.sqrt(self.head_dim)            # (B,h,T,T)
+        k = self.key(x).view(B,T,self.n_head,self.head_dim).transpose(1,2)
+        q = self.query(x).view(B,T,self.n_head,self.head_dim).transpose(1,2)
+        v = self.value(x).view(B,T,self.n_head,self.head_dim).transpose(1,2)
+        att = (q @ k.transpose(-2,-1)) / math.sqrt(self.head_dim)
         att = att.masked_fill(self.mask[:,:,:T,:T] == 0, float("-inf"))
         att = F.softmax(att, dim=-1)
         att = self.attn_drop(att)
-        y = att @ v                                                            # (B,h,T,hd)
-        y = y.transpose(1,2).contiguous().view(B,T,C)                          # (B,T,C)
+        y = att @ v
+        y = y.transpose(1,2).contiguous().view(B,T,C)
         y = self.resid_drop(self.proj(y))
         return y
 
 class Block(nn.Module):
-    def __init__(self, n_embd, n_head, block_size, attn_pdrop=0.0, resid_pdrop=0.0, mlp_pdrop=0.0):
+    def __init__(self, n_embd, n_head, block_size, attn_pdrop=0.1, resid_pdrop=0.1, mlp_pdrop=0.1):
         super().__init__()
         self.ln1 = nn.LayerNorm(n_embd)
         self.attn = CausalSelfAttention(n_embd, n_head, block_size, attn_pdrop, resid_pdrop)
@@ -54,34 +54,48 @@ class Block(nn.Module):
         return x
 
 class GPTMini(nn.Module):
-    def __init__(self, vocab_size, block_size=128, n_layer=4, n_head=4, n_embd=128, embd_pdrop=0.0):
+    def __init__(self, vocab_size, block_size=256, n_layer=4, n_head=4, n_embd=128, embd_pdrop=0.1, num_styles:int=1):
         super().__init__()
         self.block_size = block_size
         self.tok_emb = nn.Embedding(vocab_size, n_embd)
         self.pos_emb = nn.Embedding(block_size, n_embd)
+        self.style_emb = nn.Embedding(num_styles, n_embd) if num_styles > 1 else None
         self.drop = nn.Dropout(embd_pdrop)
         self.blocks = nn.Sequential(*[Block(n_embd, n_head, block_size) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd)
         self.head = nn.Linear(n_embd, vocab_size, bias=False)
 
-    def forward(self, idx, targets=None):
+    def forward(self, idx, targets=None, style=None):
         B,T = idx.size()
-        pos = torch.arange(0, T, dtype=torch.long, device=idx.device).unsqueeze(0)
-        x = self.tok_emb(idx) + self.pos_emb(pos)
+        if self.style_emb is not None and style is not None:
+            # Reserve one slot for style token: keep last block_size-1 tokens
+            idx = idx[:, : self.block_size-1]
+            T = idx.size(1)
+            pos = torch.arange(0, T+1, dtype=torch.long, device=idx.device).unsqueeze(0)
+            x_tok = self.tok_emb(idx)
+            svec = self.style_emb(style).unsqueeze(1)  # (B,1,C)
+            x = torch.cat([svec, x_tok], dim=1) + self.pos_emb(pos)
+        else:
+            pos = torch.arange(0, T, dtype=torch.long, device=idx.device).unsqueeze(0)
+            x = self.tok_emb(idx) + self.pos_emb(pos)
         x = self.drop(x)
         x = self.blocks(x)
         x = self.ln_f(x)
         logits = self.head(x)
         loss = None
         if targets is not None:
+            # Align targets if style token prepended
+            if self.style_emb is not None and style is not None:
+                targets = targets[:, : self.block_size-1]
+                targets = torch.cat([targets[:, :1], targets], dim=1)  # simple align; first token unused
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=0, top_p=0.0):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=0, top_p=0.0, style=None):
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -self.block_size:]
-            logits, _ = self(idx_cond)
+            logits, _ = self(idx_cond, style=style)
             logits = logits[:, -1, :] / max(temperature, 1e-6)
             if top_k > 0:
                 v,_ = torch.topk(logits, top_k)

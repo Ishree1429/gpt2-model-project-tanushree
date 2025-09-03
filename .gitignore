@@ -22,3 +22,7 @@ data/*.csv
 /data/lyrics.txt
 /data/*.csv
 /checkpoints/*.pt
+
+# keep big files out of git
+/checkpoints/*.pt
+/data/*.txt
